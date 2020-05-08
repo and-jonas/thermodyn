@@ -1,6 +1,6 @@
 
 rm(list = ls())
-.libPaths("T:/R3UserLibs")
+.libPaths("T:R3UserLibs")
 library(SpATS)
 detach("package:plyr")
 library(tidyverse)
@@ -15,16 +15,17 @@ source("thermodyn/R/Utils/003_h2_BLUEs_utils.R")
 
 #============================================================================================================== -
 
-dat <- readRDS("Data/data_ready/5_data_dyntraits.rds") ## use only selected subset
-# dat <- readRDS("Data/data_all_plots/5_data_dyntraits.rds") ## use all available data
+# dat <- readRDS("Data/data_ready/5_data_dyntraits.rds") ## use only selected subset
+dat <- readRDS("Data/data_all_plots/5_data_dyntraits.rds") ## use all available data
 design <- dat %>% dplyr::select(Plot_ID, design) %>% unnest(c(design)) %>% unique()
 
 # reshape
 newnames <- c(names(dat$dyntraits[[1]]), paste0(names(dat$dyntraits[[1]]), "_fc"))
 data0 <- dat %>% 
-  dplyr::select(Plot_ID, design, dyntraits, dyntraits_fc) %>% 
+  extract_covars_from_nested(from = "covariates", vars = c("heading_GDDAS", "Cnp_onsen_gom_GDDAS_fitted")) %>% 
+  dplyr::select(Plot_ID, design, heading_GDDAS, Cnp_onsen_gom_GDDAS_fitted, dyntraits, dyntraits_fc) %>% 
   unnest(c(design, dyntraits, dyntraits_fc), names_repair = "unique") 
-names(data0)[18:23] <- newnames
+names(data0)[20:25] <- newnames
 
 data0 <- data0%>% 
   gather(., dyntrait, value, slp_ct:sc_midstg_fc) %>% 
@@ -36,15 +37,16 @@ data0 <- data0%>%
 #for dyntraits and dyntraits_fc
 corrected_all <- data0 %>% 
   group_by(dyntrait, harvest_year) %>% group_nest() %>% 
+  # filter(grepl("_fc", dyntrait)) %>% 
   # calculate within-year repeatablity
   mutate(w2 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
-                         fixed = "~ NULL", genotype.as.random = TRUE, genotype = "Gen_Name",
+                         fixed = "~ check + heading_GDDAS + Cnp_onsen_gom_GDDAS_fitted", genotype.as.random = TRUE, genotype = "Gen_Name",
                          .f = possibly(f_spats, otherwise = NA_real_)) %>%
            purrr::map_dbl(.x = .,
                           .f = possibly(get_h2, otherwise = NA_real_)))  %>%
   # extract BLUEs and spatially corrected plot values
   mutate(obj = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
-                          fixed = "~ NULL", genotype.as.random = FALSE, genotype = "Gen_Name",
+                          fixed = "~ heading_GDDAS", genotype.as.random = FALSE, genotype = "Gen_Name",
                           .f = possibly(f_spats, otherwise = NA_real_))) %>%
   mutate(plot_obj = purrr::map(.x = obj, .f = plot)) %>% 
   mutate(BLUE =  purrr::map(.x = obj,
@@ -59,8 +61,8 @@ corrected_all <- data0 %>%
                            form = formula(spatial ~ RangeLot + RowLot | Lot),
                            .f = possibly(desplot::desplot, otherwise = NA_real_)))
 
-# corrected_all$dyntrait
-# corrected_all$plot
+corrected_all$dyntrait
+corrected_all$plot
 
 #============================================================================================================== -
 
@@ -83,8 +85,16 @@ dyntraits_fc_corr <- corrected_all %>%
 out <- dyntraits_corr %>% full_join(dyntraits_fc_corr) %>% 
   full_join(dat,.)
 
-saveRDS(out, "Data/data_ready/6_data_dyntraits_corr.rds")
-# saveRDS(out, "Data/data_all_plots/6_data_dyntraits_corr.rds")
+cor <- out %>% 
+  extract_covars_from_nested("covariates", "heading_GDDAS") %>% 
+  extract_covars_from_nested("dyntraits_fc_corr", "slp_ct") %>% 
+  extract_covars_from_nested("design", "harvest_year") %>% 
+  dplyr::select(Plot_ID, harvest_year, heading_GDDAS, slp_ct) %>% unique() %>% 
+  dplyr::select(-Plot_ID) %>% group_by(harvest_year) %>% group_nest() %>% 
+  mutate(cor = purrr::map_dbl(data, do_cor_test, x = "heading_GDDAS", y = "slp_ct"))
+
+
+saveRDS(out, "Data/data_all_plots/6_data_dyntraits_corr.rds")
 
 #============================================================================================================== -
 
@@ -136,8 +146,6 @@ h2_BLUE <- corrected_all %>%
                                     residual = "~NULL",
                                     cullis = TRUE))
 
-
-
 #====================================================================================== -
 
 #ONE STAGE ----
@@ -154,8 +162,55 @@ h2_spatcorr <- corrected_all %>%
                                       residual = "~dsum(~id(units) | harvest_year)",
                                       cullis = TRUE))
 
+
+data <- h2_spatcorr$data[[6]]
+
+data[is.na(data$spat_corr),] %>% nrow()
+
+ggplot(data) +
+  geom_histogram(aes(x = spat_corr)) +
+  facet_wrap(~harvest_year, scales = "free")
+
+
 #====================================================================================== -
 
 ## THESE ARE FINAL RESULTS 
 
 #====================================================================================== -
+
+
+#perform spatial correction
+#for dyntraits and dyntraits_fc
+corrected_all <- data0 %>% 
+  group_by(dyntrait, harvest_year) %>% group_nest() %>% 
+  filter(grepl("_fc", dyntrait)) %>% 
+  # calculate within-year repeatablity
+  mutate(w2_0 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
+                         fixed = "~ NULL", genotype.as.random = TRUE, genotype = "Gen_Name",
+                         .f = possibly(f_spats, otherwise = NA_real_)) %>%
+           purrr::map_dbl(.x = .,
+                          .f = possibly(get_h2, otherwise = NA_real_))) %>% 
+  mutate(w2_1 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
+                         fixed = "~ check", genotype.as.random = TRUE, genotype = "Gen_Name",
+                         .f = possibly(f_spats, otherwise = NA_real_)) %>%
+           purrr::map_dbl(.x = .,
+                          .f = possibly(get_h2, otherwise = NA_real_))) %>% 
+  mutate(w2_21 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
+                         fixed = "~ check + heading_GDDAS", genotype.as.random = TRUE, genotype = "Gen_Name",
+                         .f = possibly(f_spats, otherwise = NA_real_)) %>%
+           purrr::map_dbl(.x = .,
+                          .f = possibly(get_h2, otherwise = NA_real_))) %>% 
+  mutate(w2_22 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
+                         fixed = "~ check + Cnp_onsen_gom_GDDAS_fitted", genotype.as.random = TRUE, genotype = "Gen_Name",
+                         .f = possibly(f_spats, otherwise = NA_real_)) %>%
+           purrr::map_dbl(.x = .,
+                          .f = possibly(get_h2, otherwise = NA_real_))) %>% 
+  mutate(w2_3 = purrr::map(.x = data, response = "value", random = "~ Xf + Yf", 
+                           fixed = "~ check + heading_GDDAS + Cnp_onsen_gom_GDDAS_fitted", genotype.as.random = TRUE, genotype = "Gen_Name",
+                           .f = possibly(f_spats, otherwise = NA_real_)) %>%
+           purrr::map_dbl(.x = .,
+                          .f = possibly(get_h2, otherwise = NA_real_)))
+
+W2 <- corrected_all %>% dplyr::select(-data)
+
+

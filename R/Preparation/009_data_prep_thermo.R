@@ -33,15 +33,19 @@ onsen <- read_csv("Data/data_prep/dynpars_scr.csv") %>%
   spread(Trait, value)
 
 #gy ----
-grnyld22 <- read.csv("O:/Projects/KP0011/2/Data/FPWW022_gy.csv") %>% as_tibble() %>% 
+grnyld22 <- read.csv("Data/data_from_db/FPWW022_gy.csv") %>% as_tibble() %>% 
   dplyr::select(plot.UID, trait_value.value) %>% 
   rename("Plot_ID" = plot.UID,
          "GY" = trait_value.value)
-grnyld24 <- read.csv("O:/Projects/KP0011/2/Data/FPWW024_gy.csv") %>% as_tibble() %>% 
+grnyld24 <- read.csv("Data/data_from_db/FPWW024_lot2_lot4_gy.csv") %>% as_tibble() %>% 
   dplyr::select(plot.UID, trait_value.value) %>% 
   rename("Plot_ID" = plot.UID,
          "GY" = trait_value.value)
-grnyld <- bind_rows(grnyld22, grnyld24)
+grnyld28 <- read.csv("Data/data_from_db/FPWW028_lot2_lot4_gy.csv") %>% as_tibble() %>% 
+  dplyr::select(plot.UID, trait_value.value) %>% 
+  rename("Plot_ID" = plot.UID,
+         "GY" = trait_value.value)
+grnyld <- bind_rows(grnyld22, grnyld24, grnyld28)
 
 #gpc ----
 grnprt <- read.csv("O:/FIP/2018/WW022/RefTraits/FPWW022_protein_NIRS.csv") %>% as_tibble() %>% 

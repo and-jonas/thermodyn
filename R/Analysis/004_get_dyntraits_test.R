@@ -12,8 +12,8 @@ source("thermodyn/R/Utils/002_thermo_utils.R")
 #==================================================================================== -
 
 #load data for selected plots and measurement time points
-# dat <- readRDS("Data/data_ready/4_data_selected.rds")
-dat <- readRDS("Data/data_all_plots/4_data_selected.rds")
+dat <- readRDS("Data/data_ready/4_data_selected.rds")
+# dat <- readRDS("Data/data_all_plots/4_data_selected.rds")
 design <- dplyr::select(dat, Plot_ID, design) %>% unique()
 
 y <- c("thermodata", "thermodata_corr")
@@ -28,9 +28,11 @@ for(i in y){
     dplyr::select(Plot_ID, covariates, i, timestamp, temp) %>%
     arrange(timestamp) %>% group_by(timestamp)
   
-  #Scale CT values
+  #Scale (and revert?) CT values
   scaled <- ddd %>% 
-    mutate(temp = f_scale(temp)) %>% ungroup()
+    mutate(temp = f_scale(temp)) %>% 
+    # mutate(temp = 1-temp) %>% 
+    ungroup()
   
   #check distributions
   plotdat <- scaled %>%
@@ -60,8 +62,8 @@ for(i in y){
   
   # assemble output
   suffix <- ifelse(i == "thermodata_corr", "_fc", "")
-  thermodata_sc[[i]] <- scaled_ %>% dplyr::select(Plot_ID, meas_GDDAH, temp) %>% 
-    group_by(Plot_ID) %>% group_nest(.key = paste0("thermodata_sc", suffix))
+  thermodata_sc[[i]] <- scaled_ %>% dplyr::select(Plot_ID, timestamp, meas_GDDAH, temp) %>% 
+    group_by(Plot_ID, timestamp) %>% group_nest(.key = paste0("thermodata_sc", suffix))
   
   # get intercepts
   ## fit linear trends
@@ -133,12 +135,12 @@ for(i in y){
 }  
 
 #assemble output
-out_dat1 <- thermodata_sc %>% Reduce(function(df1, df2) left_join(df1, df2, by = "Plot_ID"),.)
+out_dat1 <- thermodata_sc %>% Reduce(function(df1, df2) left_join(df1, df2, by = c("Plot_ID", "timestamp")),.)
 out_dat2 <- dat_dyn %>% Reduce(function(df1, df2) left_join(df1, df2, by = "Plot_ID"),.)
-OUT <- list(dat, out_dat1, out_dat2) %>% Reduce(function(df1, df2) left_join(df1, df2, by = "Plot_ID"),.)
+OUT <- list(dat, out_dat1, out_dat2) %>% Reduce(function(df1, df2) left_join(df1, df2),.)
 
-# saveRDS(OUT, "Data/data_ready/5_data_dyntraits.rds")
-saveRDS(OUT, "Data/data_all_plots/5_data_dyntraits.rds")
+saveRDS(OUT, "Data/data_ready/5_data_dyntraits.rds")
+# saveRDS(OUT, "Data/data_all_plots/5_data_dyntraits.rds")
 
 #==================================================================================== -
 

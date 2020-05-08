@@ -84,3 +84,69 @@ data_selected <- selected %>% ungroup() %>% dplyr::select(Plot_ID:thermodata_cor
 saveRDS(data_selected, "Data/data_all_plots/4_data_selected.rds")
 
 #==================================================================================== -
+#==================================================================================== -
+
+#>Select subset phen + stg ----
+
+year_list <- split(expanded, expanded$harvest_year)
+
+selected <- list()
+for (i in 1:length(year_list)){
+  #get data
+  data <- year_list[[i]]
+  #get LP01 range in heading
+  range_hd <- data %>% dplyr::filter(Set == "LP01") %>% 
+    dplyr::select(heading_GDDAS) %>% range(., na.rm = TRUE)
+  #select subset for phenology
+  subset_phen <- data %>% dplyr::filter(Set == "LP01" | heading_GDDAS %inrange% range_hd)
+  #select subset for "sufficient" stay-green (i.e. at least 5 flights prior to onset)
+  subset_phen_stg <- subset_phen %>% filter(meas_GDDAS < Cnp_onsen_gom_GDDAS_fitted) %>%
+    arrange(Plot_ID) %>% group_by(Plot_ID) %>% group_nest() %>% 
+    filter(map_int(data, nrow) >= 5) %>% unnest(c(data)) %>% 
+    group_by(timestamp)
+  #get number of flights meeting the criterium at each flight
+  nplots <- subset_phen_stg %>% nest() %>% mutate(plots = map_dbl(data, nrow)) 
+  #get flights with at least 90% of the plots pre-senescence
+  flights <- nplots[which(nplots$plots > 0.9*max(nplots$plots)), ] %>% pull(timestamp)
+  #exclude measurements carried out prior to end of heading
+  prec_flights <- subset_phen_stg %>% slice(which.min(meas_GDDAH)) %>% dplyr::filter(meas_GDDAH < 0) %>% pull(timestamp)
+  #FILTER FLIGHTS
+  selected[[i]] <- subset_phen_stg %>% filter(timestamp %in% flights) %>% 
+    filter(!timestamp %in% prec_flights)
+} #five flights in 2018, 6 flights in 2019
+
+data_selected <- bind_rows(selected) %>% ungroup() %>% dplyr::select(Plot_ID:thermodata_corr)
+saveRDS(data_selected, "Data/data_ready/4_data_selected.rds")
+
+#==================================================================================== -
+
+#>Select subset phen ----
+
+year_list <- split(selected, selected$harvest_year)
+
+selected <- list()
+for (i in 1:length(year_list)){
+  #get data
+  data <- year_list[[i]]
+  #get LP01 range in heading
+  range_hd <- data %>% dplyr::filter(Set == "LP01") %>% 
+    dplyr::select(heading_GDDAS) %>% range(., na.rm = TRUE)
+  #select subset for phenology
+  subset_phen <- data %>% dplyr::filter(Set == "LP01" | heading_GDDAS %inrange% range_hd) %>% 
+    group_by(timestamp)
+  #get number of flights meeting the criterium at each flight
+  nplots <- subset_phen %>% nest() %>% mutate(plots = map_dbl(data, nrow)) 
+  #get flights with at least 90% of the plots pre-senescence
+  flights <- nplots[which(nplots$plots > 0.9*max(nplots$plots)), ] %>% pull(timestamp)
+  #exclude measurements carried out prior to end of heading
+  prec_flights <- subset_phen %>% slice(which.min(meas_GDDAH)) %>% dplyr::filter(meas_GDDAH < 0) %>% pull(timestamp)
+  #FILTER FLIGHTS
+  selected[[i]] <- subset_phen %>% filter(timestamp %in% flights) %>% 
+    filter(!timestamp %in% prec_flights)
+} #five flights in 2018, 6 flights in 2019
+
+data_selected <- bind_rows(selected) %>% ungroup() %>% dplyr::select(Plot_ID:thermodata_corr)
+saveRDS(data_selected, "Data/data_ready/4_data_selected_pheno.rds")
+
+#==================================================================================== -
+#==================================================================================== -

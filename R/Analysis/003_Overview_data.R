@@ -5,6 +5,7 @@ rm(list = ls())
 .libPaths("T:/R3UserLibs")
 library(tidyverse)
 library(data.table)
+library(gridExtra)
 workdir <- "O:/Projects/KP0011/2/"
 setwd(workdir)
 
@@ -39,6 +40,10 @@ for(i in 1:length(list)){
     extract_covars_from_nested(., from = "covariates",
                                vars = c("Cnp_onsen_gom_GDDAS", "Fl0_onsen_gom_GDDAS",
                                         "heading_GDDAS"))
+  
+  #for title
+  sel <- ifelse(names(list)[i] == "None", "no subset", "subset")
+  id <- paste(unique(dd$harvest_year), sel, sep = "_")
  
  #get measurement dates
  meas_dates <- dd %>% dplyr::select(timestamp, meas_GDDAS, starts_with("Cnp")) %>% 
@@ -108,7 +113,8 @@ for(i in 1:length(list)){
     # scale_y_continuous(limits = c(-4, 12.5)) +
     theme_bw() +
     theme(panel.grid = element_blank(),
-          axis.title = element_blank()) 
+          axis.title = element_blank()) +
+    ggtitle(id)
   
 }
 
@@ -125,6 +131,9 @@ dev.off()
 airT <- read.csv("Data/data_raw/airT_db_17_19.csv")
 Precip <- read.csv("Data/data_raw/Precip_db_17_19.csv")
 data_climate <- full_join(airT, Precip, by = "timestamp")
+soilM <- read.csv("Data/data_ready/soil_wc.csv") %>% 
+  mutate(date = as.Date(date, "%Y-%m-%d"),
+         year = ifelse(Exp == "FPWW022", 2018, 2019))
 names(data_climate) <- c("timestamp", "mean_temp", "precipitation")
 
 nrow(airT); nrow(Precip); nrow(data_climate) #interessant
@@ -156,25 +165,48 @@ meteo_daily <- full_join(day_temp, day_rainfall) %>% as_tibble() %>%
 subset <- meteo_daily %>% filter(day %between% c("2018-05-01", "2018-07-13") | day %between% c("2019-05-01", "2019-07-23"))
 
 #get heading date and add to plot
-phenodat <- dat_all %>% 
+phenodat <- dat_sub %>% 
   extract_covars_from_nested(., from = "design", vars = c("harvest_year")) %>% 
   extract_covars_from_nested(., from = "covariates", vars = c("heading_date"))
 heading <- phenodat %>% group_by(harvest_year) %>% 
   dplyr::select(Plot_ID, harvest_year, heading_date) %>% 
   summarise(x1 = min(heading_date, na.rm = TRUE),
             x2 = max(heading_date, na.rm = TRUE),
-            y1 = 29,
-            y2 = 30) %>% 
+            y1 = 38,
+            y2 = 39) %>% 
   dplyr::rename("year" = harvest_year) %>% 
   mutate(year = as.character(year))
+
+#get data subset
+dd <- dat_sub %>% 
+  # filter(timestamp < "2018-06-26 11:48:37 UTC") %>% 
+  arrange(Plot_ID) %>%
+  extract_covars_from_nested(., from = "thermodata", c("meas_GDDAH", "meas_GDDAS", "temp")) %>%
+  extract_covars_from_nested(., from = "covariates",
+                             vars = c("Cnp_onsen_gom_GDDAS", "Fl0_onsen_gom_GDDAS",
+                                      "heading_GDDAS"))
+
+#get measurement dates
+meas_dates <- dd %>% dplyr::select(timestamp, meas_GDDAS, starts_with("Cnp")) %>% 
+  group_by(., timestamp) %>% 
+  summarise(meas_GDDAS = mean(meas_GDDAS)) %>% 
+  mutate(Date = as.Date(timestamp, "%Y-%m-%d")) %>% 
+  rename("r" = timestamp) %>% 
+  mutate(year = str_sub(Date, 1, 4) %>% as.factor())
+
+#for title
+sel <- ifelse(names(list)[i] == "None", "no subset", "subset")
+id <- paste(unique(dd$harvest_year), sel, sep = "_")
 
 #create figure
 p <- ggplot(subset) +
   geom_line(aes(day, mean), col = "red") +
   facet_wrap(~year, scales = "free") +
+  geom_point(meas_dates, mapping = aes(x = Date, y = 10), shape = 17, size = 2, color="black", fill = "black") +
+  geom_line(soilM, mapping = aes(x = date, y = lot_mean_mean), color = "blue") +
   geom_bar(aes(day, precipitation/2), stat = "identity", col = "dodgerblue4", fill = "dodgerblue4") +  
   geom_rect(heading, mapping = aes(xmin=x1, xmax=x2, ymin=y1, ymax=y2), alpha = 0.75, fill = "darkgreen") +
-  scale_y_continuous(sec.axis = sec_axis(~.*2, name = "Rainfall [mm/m2]\n"), limits = c(0,30)) + # trick to move axis labels add \n to introduce a line break
+  scale_y_continuous(sec.axis = sec_axis(~.*2, name = "Rainfall [mm/m2]\n"), limits = c(0,40)) + # trick to move axis labels add \n to introduce a line break
   labs(x = "", y = "Temperature [°C]") +  #re-insert x = "\nDate" if showing "Date" is needed
   theme_bw() +
   theme(panel.grid = element_blank())
